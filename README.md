@@ -7,7 +7,7 @@ A Qwen2.5-Omni-7B model, adapted with LoRA SFT, listens to a LibriSpeech utteran
 in **160 ms chunks** and makes one decision per chunk: stay silent, or emit the
 queried content the moment it becomes observable.
 
-▶ **Live demo:** https://USERNAME.github.io/librispeech-real-qa-demo/
+▶ **Live demo:** https://zxzxz-1.github.io/librispeech-real-qa-demo/
 
 ![preview](preview.png)
 
