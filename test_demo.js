@@ -125,6 +125,10 @@ for (const task of T.tasks) {
     const chips = () => outEls.filter(e => has(e, 'em'));
     const sils = () => outEls.filter(e => has(e, 'sil'));
 
+    // the model's output must be presented above the static transcript
+    ok(all.indexOf(txB) < all.indexOf(txA),
+      `${c.id}: model output is not placed above the audio transcript`);
+
     // stream 1 voices the whole sentence; only the queried targets are marked
     ok(wordEls.length === c.words.length,
       `${c.id}: words ${wordEls.length} != ${c.words.length}`);

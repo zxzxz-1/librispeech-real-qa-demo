@@ -30,18 +30,10 @@ Nothing is hand-written, scripted, or simulated.
 
 ## How to read the display
 
-Two streams are shown: a **static** reference transcript, and the model's **live**
-per-chunk output.
+Two streams are shown: the model's **live** per-chunk output first, then a **static**
+reference transcript.
 
-**Stream 1 — audio transcript (static).** The full sentence, placed under the player
-and shown in full from the start. Word timings come from forced alignment, but nothing
-about the transcript is streamed: it is a fixed reference you can read ahead of the
-audio. This is the *input* side, not the model's output.
-
-- <span>**purple**</span> = the queried target word
-- <span>**green**</span> = the model has responded to that word
-
-**Stream 2 — model output.** One token per chunk, because the model decides exactly
+**Stream 1 — model output.** One token per chunk, because the model decides exactly
 once at every chunk boundary. It transcribes nothing.
 
 - **`<silence>`** = the model emits nothing at that chunk boundary
@@ -50,6 +42,14 @@ once at every chunk boundary. It transcribes nothing.
 The output is dominated by silence: across the eight cases, 2–3 chunks out of 27–47
 carry an emission and all the rest are `<silence>`. That sparsity is the point — a
 streaming model has to learn *when not to speak* as much as *when to speak*.
+
+**Stream 2 — audio transcript (static).** The full sentence, shown in full from the
+start. Word timings come from forced alignment, but nothing about the transcript is
+streamed: it is a fixed reference you can read ahead of the audio. This is the *input*
+side, not the model's output.
+
+- <span>**purple**</span> = the queried target word
+- <span>**green**</span> = the model has responded to that word
 
 Also shown:
 

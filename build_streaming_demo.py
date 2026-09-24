@@ -563,7 +563,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="sub">
       <span class="pill"><i>test-clean</i></span>
       <span class="pill">chunk <i>0.16&nbsp;s</i></span>
-      <span class="pill">audio + static transcript vs.&nbsp;live model output</span>
+      <span class="pill">live model output vs.&nbsp;static transcript</span>
       <span class="pill ok">real model output</span>
     </div>
   </header>
@@ -580,18 +580,18 @@ TEMPLATE = r"""<!DOCTYPE html>
     <details>
       <summary>How to read this display</summary>
       <ul>
-        <li><b>Stream 1 &mdash; audio transcript (static).</b> The full sentence, placed
-            under the player and shown in full from the start. Timings come from
-            wav2vec2 forced alignment, but nothing about it is streamed.
-            This is the input side; it is <em>not</em> the model's output.
-            <span class="tw">Purple</span> marks the queried target, turning
-            <span class="hw">green</span> the moment the model responds.</li>
-        <li><b>Stream 2 &mdash; model output.</b> One token per chunk, because the model
+        <li><b>Stream 1 &mdash; model output.</b> One token per chunk, because the model
             decides exactly once at every chunk boundary: a
             <code>&lt;silence&gt;</code> token whenever it emits nothing, and a
             <span class="ew">green chip</span> at the chunks where it commits the
             queried target. The output is dominated by silence &mdash; the model is not
             transcribing.</li>
+        <li><b>Stream 2 &mdash; audio transcript (static).</b> The full sentence,
+            shown in full from the start. Timings come from wav2vec2 forced alignment,
+            but nothing about it is streamed. This is the input side; it is <em>not</em>
+            the model's output.
+            <span class="tw">Purple</span> marks the queried target, turning
+            <span class="hw">green</span> the moment the model responds.</li>
         <li><b>Timing.</b> Chunk <i>k</i> covers <code>[k&middot;0.16,(k+1)&middot;0.16)</code>&nbsp;s and is fully
             consumed at <code>(k+1)&middot;0.16</code>&nbsp;s &mdash; the earliest instant the model can answer.
             An emission therefore appears at that instant, and the metric scores its
@@ -667,32 +667,10 @@ function buildCard(c) {
   ctl.append(play, bar, time, reset);
   body.appendChild(ctl);
 
-  // ---- stream 1: what is heard, word by word (for reference) ----
-  const secA = el("div", "sec");
-  secA.appendChild(el("div", "lbl",
-    `Stream 1 &middot; audio transcript &nbsp;<span class="nch">static ` +
-    `&middot; ${c.words.length} words</span>`));
-  const txA = el("div", "tx tx-audio");
-  const wordEls = c.words.map(w => {
-    const isTgt = w.ev >= 0;
-    const s = el("span", "w" + (isTgt ? " tgt" : ""), w.w);
-    s.title = `${w.w}  [${fmt(w.start)}, ${fmt(w.end)}] s` +
-      (isTgt ? `\ntarget event ${w.ev + 1} of ${c.gt.length}` : "");
-    txA.appendChild(s);
-    return s;
-  });
-  const eventWord = {};                       // gt index -> its word span
-  c.words.forEach((w, i) => { if (w.ev >= 0) eventWord[w.ev] = wordEls[i]; });
-  secA.appendChild(txA);
-  const hintA = el("div", "hint",
-    "Shown in full from the start. This is the input side, <b>not</b> the model's output.");
-  secA.appendChild(hintA);
-  body.appendChild(secA);
-
-  // ---- stream 2: the model's real output = one wait token per chunk ----
+  // ---- stream 1: the model's real output = one wait token per chunk ----
   const secB = el("div", "sec");
   secB.appendChild(el("div", "lbl",
-    `Stream 2 &middot; model output &nbsp;<span class="nch">1 token per chunk ` +
+    `Stream 1 &middot; model output &nbsp;<span class="nch">1 token per chunk ` +
     `&middot; ${c.nChunks} chunks</span>`));
   const txB = el("div", "tx tx-out");
   const outEls = [];
@@ -719,6 +697,28 @@ function buildCard(c) {
     c.gt.length + " chunk" + (c.gt.length > 1 ? "s" : "") + " where it fires.");
   secB.appendChild(hintB);
   body.appendChild(secB);
+
+  // ---- stream 2: what is heard, word by word (static reference) ----
+  const secA = el("div", "sec");
+  secA.appendChild(el("div", "lbl",
+    `Stream 2 &middot; audio transcript &nbsp;<span class="nch">static ` +
+    `&middot; ${c.words.length} words</span>`));
+  const txA = el("div", "tx tx-audio");
+  const wordEls = c.words.map(w => {
+    const isTgt = w.ev >= 0;
+    const s = el("span", "w" + (isTgt ? " tgt" : ""), w.w);
+    s.title = `${w.w}  [${fmt(w.start)}, ${fmt(w.end)}] s` +
+      (isTgt ? `\ntarget event ${w.ev + 1} of ${c.gt.length}` : "");
+    txA.appendChild(s);
+    return s;
+  });
+  const eventWord = {};                       // gt index -> its word span
+  c.words.forEach((w, i) => { if (w.ev >= 0) eventWord[w.ev] = wordEls[i]; });
+  secA.appendChild(txA);
+  const hintA = el("div", "hint",
+    "Shown in full from the start. This is the input side, <b>not</b> the model's output.");
+  secA.appendChild(hintA);
+  body.appendChild(secA);
 
   // ---- ground-truth timeline ----
   const secTl = el("div", "sec");
