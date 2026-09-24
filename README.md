@@ -30,11 +30,27 @@ Nothing is hand-written, scripted, or simulated.
 
 ## How to read the display
 
-- **Transcript** — the full sentence appears word by word, in the order it is heard.
-  Word timings come from forced alignment, so the sentence replays exactly as spoken.
-  - <span>**purple**</span> = the queried target word
-  - <span>**green**</span> = the model has responded to that word
-  - **`⇨ chip`** = the model's own output, inserted at the exact instant it commits
+Two streams are shown side by side.
+
+**Stream 1 — audio.** Every word of the sentence, faded in at its spoken onset.
+Word timings come from forced alignment, so the sentence replays exactly as spoken.
+This is the *input* side, not the model's output.
+
+- <span>**purple**</span> = the queried target word
+- <span>**green**</span> = the model has responded to that word
+
+**Stream 2 — model output.** One token per chunk, because the model decides exactly
+once at every chunk boundary. It transcribes nothing.
+
+- **`<silence>`** = the model emits nothing at that chunk boundary
+- <span>**green chip**</span> = the model commits the queried content at that chunk
+
+The output is dominated by silence: across the eight cases, 2–3 chunks out of 27–47
+carry an emission and all the rest are `<silence>`. That sparsity is the point — a
+streaming model has to learn *when not to speak* as much as *when to speak*.
+
+Also shown:
+
 - **Timeline** — ground-truth event spans, lit green when the model's emission matches.
 - **Chunk strip** — one cell per 160 ms chunk; green marks a chunk that fired.
 - **Output log** — the raw per-chunk decisions with onset and delay.
@@ -58,7 +74,8 @@ word's onset.
 | `align_words.py` | forced alignment of LibriSpeech transcripts with wav2vec2 |
 | `word_align.json` | word-level timings produced by `align_words.py` |
 | `test_demo.js` | headless functional test (DOM + Audio stubbed) |
-| `render_transcript.js` | prints the rendered transcript to the console for inspection |
+| `render_transcript.js` | prints both rendered streams to the console for inspection |
+| `make_preview.py` | regenerates `preview.png` with Playwright |
 
 ## Running the test
 
@@ -66,9 +83,13 @@ word's onset.
 node test_demo.js
 ```
 
-Drives the player through every card and asserts that words appear in spoken order,
-that each emission fires exactly at its chunk boundary, that chips land chronologically
-inside the transcript, and that reset clears all state.
+Drives the player through every card and asserts that the heard words appear in spoken
+order, that the output stream has exactly one token per chunk with emissions only at
+the chunks the model fired on, that the output stays dominated by `<silence>`, and that
+reset clears all state.
+
+It looks for `streaming_160ms_demo.html` first and falls back to `index.html`, or
+honours `DEMO_HTML=<file>`, so the same test runs in the development tree and here.
 
 ## Rebuilding
 

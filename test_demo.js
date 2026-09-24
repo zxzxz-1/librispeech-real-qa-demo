@@ -1,12 +1,19 @@
-// Headless functional test for index.html.
+// Headless functional test for the streaming demo.
 // Stubs just enough DOM + Audio to drive the card state machine and assert that
 // model outputs appear exactly when the audio reaches each chunk's end.
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const html = fs.readFileSync(
-  path.join(__dirname, 'index.html'), 'utf8');
+// The build is published as index.html but kept as streaming_160ms_demo.html in
+// the development tree; accept either so this test runs in both.
+const PAGE = [process.env.DEMO_HTML, 'streaming_160ms_demo.html', 'index.html']
+  .filter(Boolean)
+  .map(f => path.join(__dirname, f))
+  .find(f => fs.existsSync(f));
+if (!PAGE) throw new Error('no demo html found next to test_demo.js');
+const html = fs.readFileSync(PAGE, 'utf8');
+console.log(`testing ${path.basename(PAGE)}`);
 let js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 js += "\nglobalThis.__T = {CASES, buildCard, render, tasks};\n";
 
@@ -109,26 +116,58 @@ for (const task of T.tasks) {
     const spkCells = () => cells.filter(e => has(e, 'spk')).length;
     const hits = () => gtEls.filter(e => has(e, 'hit')).length;
 
-    // ---- transcript ----
-    const txEl = all.find(e => has(e, 'tx'));
-    const wordEls = all.filter(e => has(e, 'w'));
-    const chips = () => txEl.children.filter(e => has(e, 'em'));
+    // ---- stream 1 (audio / ASR-like) and stream 2 (model output) ----
+    const txA = all.find(e => has(e, 'tx-audio'));
+    const txB = all.find(e => has(e, 'tx-out'));
+    ok(!!txA && !!txB, `${c.id}: the two streams were not both created`);
+    const wordEls = txA.children;
+    const outEls = txB.children;
+    const chips = () => outEls.filter(e => has(e, 'em'));
+    const sils = () => outEls.filter(e => has(e, 'sil'));
+
+    // stream 1 voices the whole sentence; only the queried targets are marked
     ok(wordEls.length === c.words.length,
       `${c.id}: words ${wordEls.length} != ${c.words.length}`);
+    ok(wordEls.every((e, i) => e._html === c.words[i].w),
+      `${c.id}: word text mismatch`);
     ok(wordEls.filter(e => has(e, 'tgt')).length === c.gt.length,
       `${c.id}: target words != gt count`);
-    ok(wordEls.every((e, i) => e._html === c.words[i].w),
-      `${c.id}: transcript word text mismatch`);
-    // every annotated event must point at a word that is actually in the sentence
     ok(c.words.filter(w => w.ev >= 0).length === c.gt.length,
       `${c.id}: events not all linked to a heard word`);
     ok(c.gt.every(ev => ev.spoken), `${c.id}: event missing spoken word`);
+
+    // stream 2 is the real output: exactly one decision token per chunk
+    ok(outEls.length === c.outTokens.length,
+      `${c.id}: out tokens ${outEls.length} != ${c.outTokens.length}`);
+    ok(outEls.length === c.nChunks,
+      `${c.id}: out tokens ${outEls.length} != chunks ${c.nChunks}`);
+    ok(sils().length === c.nChunks - c.speaks.length,
+      `${c.id}: silence tokens ${sils().length} != chunks-emissions ${c.nChunks - c.speaks.length}`);
+    ok(chips().length === c.speaks.length,
+      `${c.id}: emission tokens ${chips().length} != speaks ${c.speaks.length}`);
+    // tokens must appear in chunk order, one per chunk, and the model is silent
+    // for the large majority of them
+    ok(c.outTokens.every((t, i) => t.chunk === i),
+      `${c.id}: out tokens are not in chunk order`);
+    ok(4 * chips().length <= outEls.length,
+      `${c.id}: output is not dominated by silence (${chips().length}/${outEls.length})`);
+    // the output stream must never reveal the words the model heard
+    ok(c.outTokens.every(t => t.kind !== 'em' || t.text.length > 0),
+      `${c.id}: empty emission token`);
+    // reveal times must be chronological in both streams
+    {
+      const rw = c.words.map(w => w.start);
+      ok(rw.every((v, i) => i === 0 || v >= rw[i - 1]), `${c.id}: words not in time order`);
+      const ro = c.outTokens.map(t => t.reveal);
+      ok(ro.every((v, i) => i === 0 || v >= ro[i - 1]), `${c.id}: out tokens not in time order`);
+    }
 
     // initial
     ok(rows().length === 0, `${c.id}: rows at start`);
     ok(spkCells() === 0, `${c.id}: spk cells at start`);
     ok(wordEls.every(e => !has(e, 'on')), `${c.id}: words visible at start`);
-    ok(chips().length === 0, `${c.id}: chips at start`);
+    ok(outEls.every(e => !has(e, 'on')), `${c.id}: out tokens visible at start`);
+    ok(chips().filter(e => has(e, 'on')).length === 0, `${c.id}: an emission is visible at start`);
 
     play.onclick();                       // start playback -> registers tick
     const step = t => { audio.currentTime = t; const cb = pending; pending = null; if (cb) cb(); };
@@ -138,7 +177,7 @@ for (const task of T.tasks) {
     step(Math.max(0, firstRev - 0.001));
     ok(rows().length === 0, `${c.id}: row shown before reveal (t=${(firstRev - 0.001).toFixed(3)})`);
     ok(!has(cells[c.speaks[0].chunk], 'spk'), `${c.id}: spk cell lit before reveal`);
-    ok(chips().length === 0, `${c.id}: chip shown before reveal`);
+    ok(chips().filter(e => has(e, 'on')).length === 0, `${c.id}: chip shown before reveal`);
 
     // walk to each reveal and assert it appears exactly then
     for (let i = 0; i < c.speaks.length; i++) {
@@ -148,15 +187,20 @@ for (const task of T.tasks) {
       ok(has(cells[sp.chunk], 'spk'), `${c.id}: chunk ${sp.chunk} not marked spk at reveal`);
       ok(!has(cells[sp.chunk], 'bad'), `${c.id}: chunk ${sp.chunk} wrongly flagged bad (gt=${sp.gt_idx})`);
       if (sp.gt_idx >= 0) ok(has(gtEls[sp.gt_idx], 'hit'), `${c.id}: gt ${sp.gt_idx} not hit`);
-      ok(chips().length === i + 1, `${c.id}: chips at reveal #${i} (got ${chips().length})`);
-      ok(chips()[i]._html.includes(sp.text), `${c.id}: chip text at #${i}`);
+      ok(chips().filter(e => has(e, 'on')).length === i + 1,
+        `${c.id}: chips shown at reveal #${i} (got ${chips().filter(e => has(e, 'on')).length})`);
+      ok(chips()[i]._html === sp.text, `${c.id}: chip text at #${i}`);
     }
 
-    // transcript words must be revealed in spoken order, and only when due
+    // both streams must advance in step with the audio, and only when due
     {
-      const due = c.words.filter(w => w.start <= c.speaks[c.speaks.length - 1].reveal);
-      const on = wordEls.filter(e => has(e, 'on')).length;
-      ok(on === due.length, `${c.id}: words revealed ${on} != due ${due.length}`);
+      const lastRev = c.speaks[c.speaks.length - 1].reveal;
+      const dueW = c.words.filter(w => w.start <= lastRev).length;
+      const onW = wordEls.filter(e => has(e, 'on')).length;
+      ok(onW === dueW, `${c.id}: words revealed ${onW} != due ${dueW}`);
+      const dueO = c.outTokens.filter(t => t.reveal <= lastRev).length;
+      const onO = outEls.filter(e => has(e, 'on')).length;
+      ok(onO === dueO, `${c.id}: out tokens revealed ${onO} != due ${dueO}`);
       // every target word whose event fired must be marked hit
       c.speaks.forEach(sp => {
         if (sp.gt_idx >= 0) {
@@ -181,19 +225,19 @@ for (const task of T.tasks) {
     ok(spkCells() === c.speaks.length, `${c.id}: final spk cells ${spkCells()} != ${c.speaks.length}`);
     ok(hits() === c.gt.length, `${c.id}: gt hits ${hits()} != ${c.gt.length}`);
     ok(wordEls.every(e => has(e, 'on')), `${c.id}: not all words revealed at end`);
+    ok(outEls.every(e => has(e, 'on')), `${c.id}: not all out tokens revealed at end`);
     ok(chips().length === c.speaks.length, `${c.id}: final chips ${chips().length} != speaks`);
     ok(chips().every(e => has(e, 'on')), `${c.id}: chip never faded in`);
-    // transcript DOM order must be chronological: each chip sits after the words
-    // heard before it and before the words heard after it
+    // stream-2 DOM order must be the chunk order, with an emission exactly at
+    // the chunks where the model spoke
     {
-      let idx = 0;
-      const order = txEl.children;
-      c.speaks.forEach((sp, i) => {
-        const at = order.indexOf(chips()[i]);
-        ok(at > 0, `${c.id}: chip ${i} at position ${at}`);
-        const before = c.words.filter(w => w.start <= sp.reveal).length;
-        ok(at === before + i, `${c.id}: chip ${i} at ${at}, expected ${before + i} (time order)`);
-      });
+      const emIdx = outEls.map((e, i) => has(e, 'em') ? i : -1).filter(i => i >= 0);
+      ok(emIdx.length === c.speaks.length,
+        `${c.id}: emission slots ${emIdx.length} != speaks`);
+      ok(emIdx.join(',') === c.speaks.map(s => s.chunk).join(','),
+        `${c.id}: emissions at chunks ${emIdx.join(',')} != speaks ${c.speaks.map(s => s.chunk).join(',')}`);
+      ok(outEls.every(e => has(e, 'em') || has(e, 'sil')),
+        `${c.id}: every output token must be an emission or a silence`);
     }
 
     // reset must wipe everything
@@ -202,9 +246,11 @@ for (const task of T.tasks) {
     ok(spkCells() === 0, `${c.id}: spk cells after reset`);
     ok(hits() === 0, `${c.id}: hits after reset`);
     ok(wordEls.every(e => !has(e, 'on')), `${c.id}: words after reset`);
-    ok(chips().length === 0, `${c.id}: chips after reset`);
+    ok(outEls.every(e => !has(e, 'on')), `${c.id}: out tokens after reset`);
+    ok(chips().filter(e => has(e, 'on')).length === 0, `${c.id}: chips after reset`);
 
     console.log(`  ok  ${c.id.padEnd(18)} ${c.nChunks} chunks  ${c.speaks.length} speaks  ` +
+      `${wordEls.length} words  ${outEls.length} out tokens  ` +
       `delay=${c.speaks.map(s => s.delay).join(',')}`);
   });
 }

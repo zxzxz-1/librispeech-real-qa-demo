@@ -1,10 +1,16 @@
-// Render the demo in the DOM stub and print the transcript as text, so the
-// interleaving of spoken words and model outputs can be eyeballed directly.
+// Render the demo in the DOM stub and print both streams as text, so the
+// interleaving of heard words and model outputs can be eyeballed directly.
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+// published as index.html, kept as streaming_160ms_demo.html in the dev tree
+const PAGE = [process.env.DEMO_HTML, 'streaming_160ms_demo.html', 'index.html']
+  .filter(Boolean)
+  .map(f => path.join(__dirname, f))
+  .find(f => fs.existsSync(f));
+if (!PAGE) throw new Error('no demo html found next to render_transcript.js');
+const html = fs.readFileSync(PAGE, 'utf8');
 let js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 js += "\nglobalThis.__T = {CASES, buildCard, render, tasks};\n";
 
@@ -90,23 +96,45 @@ for (const task of T.tasks) {
     audio.ended = true;
     audio.onended();
 
-    const tx = all.find(e => has(e, 'tx'));
+    const txA = all.find(e => has(e, 'tx-audio'));
+    const txB = all.find(e => has(e, 'tx-out'));
     console.log(`\n=== ${c.id}  [${c.taskLabel}]  query="${c.query}"  ` +
       `delay=${c.stat.delayMean.toFixed(3)}s ===`);
     console.log(`prompt: ${c.prompt}`);
-    console.log('--- transcript after playback ---');
-    const parts = [];
-    tx.children.forEach(n => {
-      if (has(n, 'em')) parts.push(`  ⟹${n._html.replace(/&#8680;/g, '')}  `);
-      else parts.push(n._html + (has(n, 'hit') ? '*' : ''));
-    });
-    // wrap at ~78 chars for readability
-    let line = '';
-    for (const p of parts) {
-      if ((line + p).length > 78) { console.log('  ' + line.trim()); line = ''; }
-      line += p + ' ';
+
+    const wrap = (parts, width = 76) => {
+      let line = '';
+      for (const p of parts) {
+        if ((line + p).length > width) { console.log('  ' + line.trim()); line = ''; }
+        line += p + ' ';
+      }
+      if (line.trim()) console.log('  ' + line.trim());
+    };
+
+    console.log(`--- stream 1: audio (${txA.children.length} words) ---`);
+    // word index -> the reveal time it faded in at, so the transcript can be
+    // printed with timestamps and the emission point is visible inline
+    const revealAt = new Map();
+    c.words.forEach((w, i) => revealAt.set(txA.children[i], w.start));
+    wrap(txA.children.map(n =>
+      `${revealAt.get(n).toFixed(2)}:${n._html}${has(n, 'hit') ? '*' : ''}`));
+    console.log('  (* = target word the model decided on)');
+
+    console.log(`--- stream 2: model output, one token per chunk ` +
+      `(${txB.children.length} tokens = ${c.nChunks} chunks) ---`);
+    // compact mark sequence: one glyph per chunk, so the per-chunk decision
+    // cadence and the sparsity of the emissions are both directly visible
+    const marks = txB.children.map(n => has(n, 'em') ? `[${n._html}]` : '\u00b7');
+    for (let i = 0; i < marks.length; i += 38) {
+      const lo = i, hi = Math.min(i + 38, marks.length);
+      console.log(`  c${String(lo).padStart(3, '0')}-${String(hi - 1).padStart(3, '0')}  ` +
+        marks.slice(lo, hi).join(' '));
     }
-    if (line.trim()) console.log('  ' + line.trim());
-    console.log('  (* = target word the model responded to; ⟹ = model output at commit time)');
+    console.log(`  (\u00b7 = <silence>, [x] = emitted target; ` +
+      `${c.nChunks - c.speaks.length}/${c.nChunks} chunks are silent)`);
+    c.speaks.forEach(sp => {
+      console.log(`  emission @ chunk ${sp.chunk} (reveal ${sp.reveal.toFixed(2)}s) ` +
+        `-> "${sp.text}"  delay=${sp.delay.toFixed(3)}s`);
+    });
   });
 }

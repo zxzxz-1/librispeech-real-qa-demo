@@ -31,7 +31,7 @@ OUT_ROOT = Path(
 RUN = "phase5_joint_posneg080_chunk016_v2"
 EVAL = OUT_ROOT / RUN / "eval_test_clean"
 METRICS = EVAL / "stream_s2t_metrics_ms"
-DEST = Path(__file__).resolve().parent / "index.html"
+DEST = Path(__file__).resolve().parent / "streaming_160ms_demo.html"
 
 CHUNK_SEC = 0.16
 BITRATE = "48k"
@@ -133,6 +133,38 @@ def attach_words(sid: str, gt: list[dict], align: dict[str, list[dict]]) -> list
     return words
 
 
+def build_output_stream(
+    speaks: list[dict], n_chunks: int, duration: float, chunk_sec: float,
+) -> list[dict]:
+    """The model's own output as a wait-token timeline: exactly one token per chunk.
+
+    The model decides once at every chunk boundary, so the output stream has the
+    same length as the chunk sequence: it emits the queried target at the chunks
+    where it chooses to speak, and ``<silence>`` everywhere else. A decision for
+    chunk ``k`` becomes available at the chunk's right boundary, which for the
+    final (possibly partial) chunk is the end of the audio. This is the model's
+    real output, not a transcription: it says nothing about the words it heard,
+    only whether it chose to speak.
+    """
+    by_chunk = {sp["chunk"]: i for i, sp in enumerate(speaks)}
+    stream: list[dict] = []
+    for k in range(n_chunks):
+        reveal = round(min((k + 1) * chunk_sec, duration), 3)
+        i = by_chunk.get(k)
+        if i is None:
+            stream.append({
+                "kind": "sil", "chunk": k, "reveal": reveal,
+                "start": round(k * chunk_sec, 3),
+            })
+        else:
+            sp = speaks[i]
+            stream.append({
+                "kind": "em", "chunk": k, "reveal": reveal, "idx": i,
+                "text": sp["text"], "matched": sp["gt_idx"] >= 0,
+            })
+    return stream
+
+
 def build_case(task: str, sid: str, align: dict[str, list[dict]]) -> dict:
     log = json.loads((EVAL / f"inference_log_{sid}_{task}.json").read_text())
     per = json.loads(
@@ -166,6 +198,7 @@ def build_case(task: str, sid: str, align: dict[str, list[dict]]) -> dict:
     ]
     match_speaks_to_gt(speaks, gt)
     words = attach_words(sid, gt, align)
+    out_tokens = build_output_stream(speaks, n_chunks, dur, CHUNK_SEC)
 
     return {
         "id": sid,
@@ -179,6 +212,7 @@ def build_case(task: str, sid: str, align: dict[str, list[dict]]) -> dict:
         "nChunks": n_chunks,
         "gt": gt,
         "words": words,
+        "outTokens": out_tokens,
         "chunks": chunks,
         "speaks": speaks,
         "audio": mp3_data_uri(Path(log["audio_path"])),
@@ -199,14 +233,30 @@ def main() -> None:
     cases = [build_case(t, s, align) for t, s in CASES]
     for c in cases:
         assert c["stat"]["clean"] == 1.0 and c["stat"]["fa"] == 0, c["id"]
+        nEm = sum(1 for t in c["outTokens"] if t["kind"] == "em")
+        nSil = sum(1 for t in c["outTokens"] if t["kind"] == "sil")
         print(
             f"  {c['task']:18s} {c['id']:18s} {c['duration']:5.2f}s "
             f"{c['nChunks']:4d} chunks  {len(c['gt'])} events  "
-            f"delay={c['stat']['delayMean']:.3f}  words={len(c['words'])}"
+            f"words={len(c['words']):3d}  out={len(c['outTokens'])} ({nEm} em/{nSil} sil)  "
+            f"delay={c['stat']['delayMean']:.3f}"
         )
         assert len(c["speaks"]) == len(c["gt"]), (c["id"], len(c["speaks"]), len(c["gt"]))
         assert len(c["words"]) > 0, c["id"]
         assert all(ev.get("spoken") for ev in c["gt"]), c["id"]
+        # stream 1: the audio stream must voice every target exactly once
+        assert sum(1 for w in c["words"] if w["ev"] >= 0) == len(c["gt"]), c["id"]
+        # stream 2: exactly one decision per chunk, emissions only where it spoke
+        assert len(c["outTokens"]) == c["nChunks"], (c["id"], len(c["outTokens"]))
+        assert nEm == len(c["speaks"]) == len(c["gt"]), (c["id"], nEm)
+        assert nSil == c["nChunks"] - nEm, (c["id"], nSil, c["nChunks"], nEm)
+        assert [t["chunk"] for t in c["outTokens"]] == list(range(c["nChunks"])), c["id"]
+        # the output is dominated by silence: most chunks produce nothing
+        assert 4 * nEm <= c["nChunks"], (c["id"], nEm, c["nChunks"])
+        # reveal times must be non-decreasing and fit inside the utterance
+        rev = [t["reveal"] for t in c["outTokens"]]
+        assert rev == sorted(rev), (c["id"], rev)
+        assert rev[-1] <= c["duration"] + 1e-9, (c["id"], rev[-1], c["duration"])
 
     html = TEMPLATE.replace("__DATA__", json.dumps(cases, ensure_ascii=False))
     DEST.write_text(html, encoding="utf-8")
@@ -275,7 +325,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   .intro .dim{color:var(--dim2)}
 
   /* ---------------- cards ---------------- */
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(470px,1fr));gap:20px}
+  .grid{display:grid;grid-template-columns:1fr;gap:20px;max-width:1000px}
   .card{
     position:relative;border:1px solid var(--line);border-radius:15px;overflow:hidden;
     background:linear-gradient(180deg,rgba(255,255,255,.030),rgba(255,255,255,.007));
@@ -401,6 +451,11 @@ TEMPLATE = r"""<!DOCTYPE html>
   .tx .w.tgt.on{text-shadow:0 0 16px rgba(167,139,250,.55)}
   .tx .w.tgt.hit{color:#7ee787;text-shadow:0 0 16px rgba(63,185,80,.55)}
   .tx .w.tgt.miss{color:#ff9b95;text-decoration:line-through;text-shadow:none}
+  .tx .w.sil{
+    color:#3f4a59;font-weight:400;font-size:12px;letter-spacing:.2px;
+    padding:1px 7px;border-radius:5px;margin-right:6px;
+    background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.055);
+  }
   .tx .em{
     display:inline-flex;align-items:center;margin:0 8px;padding:2.5px 10px;
     border-radius:999px;font-size:11.5px;font-weight:700;vertical-align:1px;
@@ -413,6 +468,19 @@ TEMPLATE = r"""<!DOCTYPE html>
   .tx .em.bad{background:rgba(248,81,73,.15);color:#ff9b95;border-color:rgba(248,81,73,.45)}
   .tx .cnt{color:#5a6678;font-size:11.5px;font-weight:600}
   .tx .ph{color:#3d4757}
+  .tx .nch{color:#5a6678;font-size:11.5px;font-weight:600}
+  .tx-audio{border-left:2px solid rgba(167,139,250,.35)}
+  .tx-out{border-left:2px solid rgba(63,185,80,.35);line-height:1.95}
+  /* one <silence> token per chunk: keep each one narrow so the per-chunk
+     cadence stays readable even when the utterance spans dozens of chunks */
+  .tx-out .w.sil{
+    font-size:10px;padding:0 5px;margin-right:4px;letter-spacing:0;
+  }
+  .tx-out .em{margin:0 4px}
+  .hint{
+    margin-top:7px;color:var(--dim2);font-size:11.5px;line-height:1.6;
+  }
+  .hint b{color:#9aa7b8;font-weight:600}
 
   /* ---------------- output log ---------------- */
   .log{
@@ -492,7 +560,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="sub">
       <span class="pill"><i>test-clean</i></span>
       <span class="pill">chunk <i>0.16&nbsp;s</i></span>
-      <span class="pill">one decision per chunk</span>
+      <span class="pill">two streams: audio vs.&nbsp;model output</span>
       <span class="pill ok">real model output</span>
     </div>
   </header>
@@ -509,13 +577,21 @@ TEMPLATE = r"""<!DOCTYPE html>
     <details>
       <summary>How to read this display</summary>
       <ul>
-        <li><b>Chunks.</b> Chunk <i>k</i> covers <code>[k&middot;0.16,(k+1)&middot;0.16)</code>&nbsp;s and is fully
+        <li><b>Stream 1 &mdash; audio.</b> Every word of the sentence, faded in at its
+            spoken onset (wav2vec2 forced alignment). This is the input side; it is
+            <em>not</em> the model's output.
+            <span class="tw">Purple</span> marks the queried target, turning
+            <span class="hw">green</span> the moment the model responds.</li>
+        <li><b>Stream 2 &mdash; model output.</b> One token per chunk, because the model
+            decides exactly once at every chunk boundary: a
+            <code>&lt;silence&gt;</code> token whenever it emits nothing, and a
+            <span class="ew">green chip</span> at the chunks where it commits the
+            queried target. The output is dominated by silence &mdash; the model is not
+            transcribing.</li>
+        <li><b>Timing.</b> Chunk <i>k</i> covers <code>[k&middot;0.16,(k+1)&middot;0.16)</code>&nbsp;s and is fully
             consumed at <code>(k+1)&middot;0.16</code>&nbsp;s &mdash; the earliest instant the model can answer.
-            Outputs appear at that instant.</li>
-        <li><b>Transcript.</b> Words fade in at their spoken onset (wav2vec2 forced alignment).
-            <span class="tw">Purple</span> marks the queried target; it turns
-            <span class="hw">green</span> once the model responds. The
-            <span class="ew">&#8680; chips</span> are the model's own output, inserted the moment it commits.</li>
+            An emission therefore appears at that instant, and the metric scores its
+            <i>onset</i> <code>k&middot;0.16</code>&nbsp;s against <code>[t_start, t_end]</code>.</li>
         <li><b>Scoring.</b> The metric matches the chunk's <i>onset</i>
             <code>k&middot;0.16</code>&nbsp;s against <code>[t_start, t_end]</code>, so
             <code>delay</code> is measured from the word's onset.</li>
@@ -527,6 +603,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 <script>
 const CASES = __DATA__;
 
+const SIL_TOKEN = "&lt;silence&gt;";
 const fmt = (x, n = 2) => Number(x).toFixed(n);
 
 // One accent per task, so each card reads as a distinct "channel".
@@ -586,22 +663,56 @@ function buildCard(c) {
   ctl.append(play, bar, time, reset);
   body.appendChild(ctl);
 
-  // ---- live transcript: words appear as they are heard, model output inline ----
-  const secTx = el("div", "sec");
-  secTx.appendChild(el("div", "lbl",
-    "Transcript"));
-  const tx = el("div", "tx");
+  // ---- stream 1: what is heard, word by word (for reference) ----
+  const secA = el("div", "sec");
+  secA.appendChild(el("div", "lbl", "Stream 1 &middot; audio"));
+  const txA = el("div", "tx tx-audio");
   const wordEls = c.words.map(w => {
-    const s = el("span", "w" + (w.ev >= 0 ? " tgt" : ""), w.w);
+    const isTgt = w.ev >= 0;
+    const s = el("span", "w" + (isTgt ? " tgt" : ""), w.w);
     s.title = `${w.w}  [${fmt(w.start)}, ${fmt(w.end)}] s` +
-      (w.ev >= 0 ? `\ntarget event ${w.ev + 1} of ${c.gt.length}` : "");
-    tx.appendChild(s);
+      (isTgt ? `\ntarget event ${w.ev + 1} of ${c.gt.length}` : "");
+    txA.appendChild(s);
     return s;
   });
   const eventWord = {};                       // gt index -> its word span
   c.words.forEach((w, i) => { if (w.ev >= 0) eventWord[w.ev] = wordEls[i]; });
-  secTx.appendChild(tx);
-  body.appendChild(secTx);
+  secA.appendChild(txA);
+  const hintA = el("div", "hint",
+    "The input side &mdash; it is <b>not</b> the model's output.");
+  secA.appendChild(hintA);
+  body.appendChild(secA);
+
+  // ---- stream 2: the model's real output = one wait token per chunk ----
+  const secB = el("div", "sec");
+  secB.appendChild(el("div", "lbl",
+    `Stream 2 &middot; model output &nbsp;<span class="nch">1 token per chunk ` +
+    `&middot; ${c.nChunks} chunks</span>`));
+  const txB = el("div", "tx tx-out");
+  const outEls = [];
+  c.outTokens.forEach(t => {
+    let n;
+    if (t.kind === "sil") {
+      n = el("span", "w sil", SIL_TOKEN);
+      n.title = `chunk ${t.chunk}  [${fmt(t.start)}, ${fmt(t.reveal)}] s\n` +
+        `<silence>  -  the model emits nothing at this chunk boundary`;
+    } else {
+      const sp = c.speaks[t.idx];
+      n = el("span", "em" + (t.matched ? "" : " bad"), t.text);
+      n.title = `chunk ${sp.chunk} &middot; decided at ${fmt(sp.reveal)} s` +
+        (t.matched ? ` &middot; delay +${fmt(sp.delay)} s` : " &middot; false alarm");
+    }
+    txB.appendChild(n);
+    outEls.push(n);
+  });
+  secB.appendChild(txB);
+  const hintB = el("div", "hint",
+    "The model's actual output: it decides once at every chunk boundary and " +
+    "transcribes nothing. It stays silent at " + (c.nChunks - c.gt.length) +
+    " of the " + c.nChunks + " chunks and emits the queried target at the " +
+    c.gt.length + " chunk" + (c.gt.length > 1 ? "s" : "") + " where it fires.");
+  secB.appendChild(hintB);
+  body.appendChild(secB);
 
   // ---- ground-truth timeline ----
   const secTl = el("div", "sec");
@@ -657,9 +768,8 @@ function buildCard(c) {
   const audio = new Audio(c.audio);
   audio.preload = "auto";
 
-  let shown = 0;              // how many emissions already revealed
-  let wShown = 0;             // how many transcript words already revealed
-  let chips = [];             // transcript emission chips (for reset)
+  let wShown = 0;             // how many stream-1 words already revealed
+  let oShown = 0;             // how many stream-2 tokens already revealed
   let raf = null;
   let rows = [];
 
@@ -682,11 +792,10 @@ function buildCard(c) {
   }
 
   function resetState() {
-    shown = 0;
     wShown = 0;
-    chips.forEach(x => x.remove());
-    chips = [];
+    oShown = 0;
     wordEls.forEach(x => x.classList.remove("on", "hit", "miss"));
+    outEls.forEach(x => x.classList.remove("on", "hit", "miss"));
     rows.forEach(r => r.remove());
     rows = [];
     log.innerHTML = "";
@@ -699,39 +808,40 @@ function buildCard(c) {
     time.textContent = `0.00 / ${fmt(c.duration)}`;
   }
 
-  // Reveal transcript words and model emissions in time order.
+  // Reveal both streams strictly in time order: stream-1 words at their spoken
+  // onset, stream-2 tokens (silence or emission) at the instant they appear.
   function advance(t) {
     for (;;) {
       const hasW = wShown < c.words.length;
-      const hasE = shown < c.speaks.length;
-      if (!hasW && !hasE) return;
+      const hasO = oShown < c.outTokens.length;
+      if (!hasW && !hasO) return;
       const tw = hasW ? c.words[wShown].start : Infinity;
-      const te = hasE ? c.speaks[shown].reveal : Infinity;
-      if (Math.min(tw, te) > t + 1e-6) return;
-      if (hasW && tw <= te) wordEls[wShown++].classList.add("on");
-      else fire();
+      const to = hasO ? c.outTokens[oShown].reveal : Infinity;
+      if (Math.min(tw, to) > t + 1e-6) return;
+      if (hasW && tw <= to) wordEls[wShown++].classList.add("on");
+      else revealOut();
     }
   }
 
-  // The model commits a decision: drop its output into the transcript stream
-  // at exactly the point the audio has reached, and mirror it in the log.
-  function fire() {
-    const sp = c.speaks[shown];
-    const b = el("span", "em" + (sp.gt_idx >= 0 ? "" : " bad"),
-      `&#8680; ${sp.text}`);
-    b.title = `chunk ${sp.chunk} &middot; decided at ${fmt(sp.reveal)} s` +
-      (sp.gt_idx >= 0 ? ` &middot; delay +${fmt(sp.delay)} s` : " &middot; false alarm");
-    // Insert right after the words heard so far. The word spans already exist
-    // (merely faded out), so appending would push the chip past unspoken words.
-    tx.insertBefore(b, wShown < c.words.length ? wordEls[wShown] : null);
-    void tx.offsetWidth;            // flush styles so the fade-in actually runs
-    b.classList.add("on");
-    chips.push(b);
+  // Reveal one stream-2 token. An emission is the model committing a decision,
+  // so it also lights the ground-truth cell and is mirrored in the log.
+  function revealOut() {
+    const tk = c.outTokens[oShown];
+    const node = outEls[oShown];
+    oShown++;
+    void node.offsetWidth;          // flush styles so the fade-in actually runs
+    node.classList.add("on");
+    if (tk.kind !== "em") return;
+    fire(tk);
+  }
+
+  // The model commits a decision: light the word it responded to and log it.
+  function fire(tk) {
+    const sp = c.speaks[tk.idx];
     if (sp.gt_idx >= 0 && eventWord[sp.gt_idx]) {
       eventWord[sp.gt_idx].classList.add("hit");
     }
     appendRow(sp);
-    shown++;
   }
 
   function appendRow(speak) {
