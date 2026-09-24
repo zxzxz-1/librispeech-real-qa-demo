@@ -470,6 +470,9 @@ TEMPLATE = r"""<!DOCTYPE html>
   .tx .ph{color:#3d4757}
   .tx .nch{color:#5a6678;font-size:11.5px;font-weight:600}
   .tx-audio{border-left:2px solid rgba(167,139,250,.35)}
+  /* stream 1 is a static reference: its words are shown in full from the start
+     and never fade in with the audio */
+  .tx-audio .w{opacity:1;transform:none}
   .tx-out{border-left:2px solid rgba(63,185,80,.35);line-height:1.95}
   /* one <silence> token per chunk: keep each one narrow so the per-chunk
      cadence stays readable even when the utterance spans dozens of chunks */
@@ -560,7 +563,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div class="sub">
       <span class="pill"><i>test-clean</i></span>
       <span class="pill">chunk <i>0.16&nbsp;s</i></span>
-      <span class="pill">two streams: audio vs.&nbsp;model output</span>
+      <span class="pill">audio + static transcript vs.&nbsp;live model output</span>
       <span class="pill ok">real model output</span>
     </div>
   </header>
@@ -577,9 +580,10 @@ TEMPLATE = r"""<!DOCTYPE html>
     <details>
       <summary>How to read this display</summary>
       <ul>
-        <li><b>Stream 1 &mdash; audio.</b> Every word of the sentence, faded in at its
-            spoken onset (wav2vec2 forced alignment). This is the input side; it is
-            <em>not</em> the model's output.
+        <li><b>Stream 1 &mdash; audio transcript (static).</b> The full sentence, placed
+            under the player and shown in full from the start. Timings come from
+            wav2vec2 forced alignment, but nothing about it is streamed.
+            This is the input side; it is <em>not</em> the model's output.
             <span class="tw">Purple</span> marks the queried target, turning
             <span class="hw">green</span> the moment the model responds.</li>
         <li><b>Stream 2 &mdash; model output.</b> One token per chunk, because the model
@@ -665,7 +669,9 @@ function buildCard(c) {
 
   // ---- stream 1: what is heard, word by word (for reference) ----
   const secA = el("div", "sec");
-  secA.appendChild(el("div", "lbl", "Stream 1 &middot; audio"));
+  secA.appendChild(el("div", "lbl",
+    `Stream 1 &middot; audio transcript &nbsp;<span class="nch">static ` +
+    `&middot; ${c.words.length} words</span>`));
   const txA = el("div", "tx tx-audio");
   const wordEls = c.words.map(w => {
     const isTgt = w.ev >= 0;
@@ -679,7 +685,7 @@ function buildCard(c) {
   c.words.forEach((w, i) => { if (w.ev >= 0) eventWord[w.ev] = wordEls[i]; });
   secA.appendChild(txA);
   const hintA = el("div", "hint",
-    "The input side &mdash; it is <b>not</b> the model's output.");
+    "Shown in full from the start. This is the input side, <b>not</b> the model's output.");
   secA.appendChild(hintA);
   body.appendChild(secA);
 
@@ -768,7 +774,6 @@ function buildCard(c) {
   const audio = new Audio(c.audio);
   audio.preload = "auto";
 
-  let wShown = 0;             // how many stream-1 words already revealed
   let oShown = 0;             // how many stream-2 tokens already revealed
   let raf = null;
   let rows = [];
@@ -792,9 +797,8 @@ function buildCard(c) {
   }
 
   function resetState() {
-    wShown = 0;
     oShown = 0;
-    wordEls.forEach(x => x.classList.remove("on", "hit", "miss"));
+    wordEls.forEach(x => x.classList.remove("hit", "miss"));
     outEls.forEach(x => x.classList.remove("on", "hit", "miss"));
     rows.forEach(r => r.remove());
     rows = [];
@@ -808,18 +812,11 @@ function buildCard(c) {
     time.textContent = `0.00 / ${fmt(c.duration)}`;
   }
 
-  // Reveal both streams strictly in time order: stream-1 words at their spoken
-  // onset, stream-2 tokens (silence or emission) at the instant they appear.
+  // Stream 1 is static, so only the model's own output advances over time: one
+  // token per chunk, silence or emission, at the instant it becomes available.
   function advance(t) {
-    for (;;) {
-      const hasW = wShown < c.words.length;
-      const hasO = oShown < c.outTokens.length;
-      if (!hasW && !hasO) return;
-      const tw = hasW ? c.words[wShown].start : Infinity;
-      const to = hasO ? c.outTokens[oShown].reveal : Infinity;
-      if (Math.min(tw, to) > t + 1e-6) return;
-      if (hasW && tw <= to) wordEls[wShown++].classList.add("on");
-      else revealOut();
+    while (oShown < c.outTokens.length && c.outTokens[oShown].reveal <= t + 1e-6) {
+      revealOut();
     }
   }
 

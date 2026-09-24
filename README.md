@@ -30,11 +30,13 @@ Nothing is hand-written, scripted, or simulated.
 
 ## How to read the display
 
-Two streams are shown side by side.
+Two streams are shown: a **static** reference transcript, and the model's **live**
+per-chunk output.
 
-**Stream 1 — audio.** Every word of the sentence, faded in at its spoken onset.
-Word timings come from forced alignment, so the sentence replays exactly as spoken.
-This is the *input* side, not the model's output.
+**Stream 1 — audio transcript (static).** The full sentence, placed under the player
+and shown in full from the start. Word timings come from forced alignment, but nothing
+about the transcript is streamed: it is a fixed reference you can read ahead of the
+audio. This is the *input* side, not the model's output.
 
 - <span>**purple**</span> = the queried target word
 - <span>**green**</span> = the model has responded to that word
@@ -83,10 +85,10 @@ word's onset.
 node test_demo.js
 ```
 
-Drives the player through every card and asserts that the heard words appear in spoken
-order, that the output stream has exactly one token per chunk with emissions only at
-the chunks the model fired on, that the output stays dominated by `<silence>`, and that
-reset clears all state.
+Drives the player through every card and asserts that the transcript stays static
+throughout playback, that the output stream has exactly one token per chunk with
+emissions only at the chunks the model fired on, that the output stays dominated by
+`<silence>`, and that reset clears all state.
 
 It looks for `streaming_160ms_demo.html` first and falls back to `index.html`, or
 honours `DEMO_HTML=<file>`, so the same test runs in the development tree and here.

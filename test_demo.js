@@ -162,10 +162,11 @@ for (const task of T.tasks) {
       ok(ro.every((v, i) => i === 0 || v >= ro[i - 1]), `${c.id}: out tokens not in time order`);
     }
 
-    // initial
+    // initial: stream 1 is static, stream 2 has not started
     ok(rows().length === 0, `${c.id}: rows at start`);
     ok(spkCells() === 0, `${c.id}: spk cells at start`);
-    ok(wordEls.every(e => !has(e, 'on')), `${c.id}: words visible at start`);
+    ok(wordEls.every(e => !has(e, 'hit') && !has(e, 'miss')),
+      `${c.id}: target words already marked hit before playback`);
     ok(outEls.every(e => !has(e, 'on')), `${c.id}: out tokens visible at start`);
     ok(chips().filter(e => has(e, 'on')).length === 0, `${c.id}: an emission is visible at start`);
 
@@ -192,15 +193,16 @@ for (const task of T.tasks) {
       ok(chips()[i]._html === sp.text, `${c.id}: chip text at #${i}`);
     }
 
-    // both streams must advance in step with the audio, and only when due
+    // the model's output must advance in step with the audio, and only when due
     {
       const lastRev = c.speaks[c.speaks.length - 1].reveal;
-      const dueW = c.words.filter(w => w.start <= lastRev).length;
-      const onW = wordEls.filter(e => has(e, 'on')).length;
-      ok(onW === dueW, `${c.id}: words revealed ${onW} != due ${dueW}`);
       const dueO = c.outTokens.filter(t => t.reveal <= lastRev).length;
       const onO = outEls.filter(e => has(e, 'on')).length;
       ok(onO === dueO, `${c.id}: out tokens revealed ${onO} != due ${dueO}`);
+      // stream 1 stays put: its words are visible throughout and are only ever
+      // recoloured, never revealed or hidden by playback
+      ok(wordEls.length === c.words.length,
+        `${c.id}: stream-1 word count changed during playback`);
       // every target word whose event fired must be marked hit
       c.speaks.forEach(sp => {
         if (sp.gt_idx >= 0) {
@@ -224,7 +226,7 @@ for (const task of T.tasks) {
     ok(rows().length === c.speaks.length, `${c.id}: final rows ${rows().length} != speaks ${c.speaks.length}`);
     ok(spkCells() === c.speaks.length, `${c.id}: final spk cells ${spkCells()} != ${c.speaks.length}`);
     ok(hits() === c.gt.length, `${c.id}: gt hits ${hits()} != ${c.gt.length}`);
-    ok(wordEls.every(e => has(e, 'on')), `${c.id}: not all words revealed at end`);
+    ok(wordEls.every(e => !has(e, 'miss')), `${c.id}: a target word was left unmatched`);
     ok(outEls.every(e => has(e, 'on')), `${c.id}: not all out tokens revealed at end`);
     ok(chips().length === c.speaks.length, `${c.id}: final chips ${chips().length} != speaks`);
     ok(chips().every(e => has(e, 'on')), `${c.id}: chip never faded in`);
@@ -245,9 +247,10 @@ for (const task of T.tasks) {
     ok(rows().length === 0, `${c.id}: rows after reset`);
     ok(spkCells() === 0, `${c.id}: spk cells after reset`);
     ok(hits() === 0, `${c.id}: hits after reset`);
-    ok(wordEls.every(e => !has(e, 'on')), `${c.id}: words after reset`);
+    ok(wordEls.every(e => !has(e, 'hit') && !has(e, 'miss')), `${c.id}: words after reset`);
     ok(outEls.every(e => !has(e, 'on')), `${c.id}: out tokens after reset`);
     ok(chips().filter(e => has(e, 'on')).length === 0, `${c.id}: chips after reset`);
+    ok(wordEls.length === c.words.length, `${c.id}: stream-1 words lost on reset`);
 
     console.log(`  ok  ${c.id.padEnd(18)} ${c.nChunks} chunks  ${c.speaks.length} speaks  ` +
       `${wordEls.length} words  ${outEls.length} out tokens  ` +
