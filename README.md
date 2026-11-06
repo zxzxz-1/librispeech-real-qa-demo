@@ -13,7 +13,7 @@ queried content the moment it becomes observable.
 
 - [Paper](https://arxiv.org/abs/2611.06496)
 - [Dataset](https://huggingface.co/datasets/light1726/librispeech-realtime-qa)
-- [Code](https://github.com/zxzxz-1/librispeech-real-qa-demo)
+- [Code](https://github.com/light1726/librispeech_realqa_eval)
 
 ![preview](assets/preview.png)
 
