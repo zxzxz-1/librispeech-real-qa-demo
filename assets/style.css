@@ -3,10 +3,10 @@
   --muted: #5f6b7a;
   --line: #dce2e8;
   --paper: #ffffff;
-  --soft: #f3f6f8;
-  --accent: #006b5e;
-  --accent-dark: #004f46;
-  --signal: #d8f052;
+  --soft: #f7f8fa;
+  --accent: #405d86;
+  --accent-dark: #304969;
+  --signal: #edf2f8;
   --max: 1120px;
 }
 
@@ -70,10 +70,9 @@ a {
   min-height: min(760px, calc(100vh - 64px));
   display: flex;
   align-items: center;
-  color: #fff;
-  background:
-    linear-gradient(105deg, rgba(0, 42, 38, .98), rgba(0, 90, 78, .9)),
-    url("./preview.png") center / cover;
+  color: var(--ink);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
 }
 
 .hero-inner {
@@ -93,7 +92,7 @@ a {
 }
 
 .hero .venue {
-  color: var(--signal);
+  color: var(--muted);
 }
 
 h1,
@@ -114,7 +113,7 @@ h1 {
 .subtitle {
   max-width: 790px;
   margin: 24px 0 0;
-  color: #d8ebe7;
+  color: #374151;
   font-size: clamp(22px, 3.4vw, 40px);
   line-height: 1.16;
   font-weight: 500;
@@ -123,7 +122,7 @@ h1 {
 .authors {
   max-width: 850px;
   margin: 30px 0 0;
-  color: #bed4d0;
+  color: var(--muted);
   font-size: 14px;
 }
 
@@ -139,28 +138,30 @@ h1 {
   align-items: center;
   min-height: 42px;
   padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, .36);
-  color: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: #374151;
+  background: var(--paper);
   font-size: 13px;
   font-weight: 750;
   text-decoration: none;
 }
 
 .button:hover {
-  border-color: #fff;
-  background: rgba(255, 255, 255, .09);
+  border-color: var(--accent);
+  background: var(--soft);
 }
 
 .button.primary {
-  border-color: var(--signal);
-  color: #13241f;
-  background: var(--signal);
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
 }
 
 .lead {
   max-width: 760px;
   margin: 42px 0 0;
-  color: #e7f1ef;
+  color: var(--muted);
   font-size: 18px;
   line-height: 1.65;
 }
@@ -315,8 +316,10 @@ h2 {
   right: 20px;
   bottom: 20px;
   padding: 12px 16px;
-  color: #142019;
-  background: var(--signal);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
   font-size: 13px;
   font-weight: 800;
 }
@@ -340,13 +343,13 @@ h2 {
   position: relative;
   overflow-x: auto;
   border: 1px solid var(--line);
-  background: #101820;
+  background: var(--soft);
 }
 
 .citation-box pre {
   margin: 0;
   padding: 28px 84px 28px 28px;
-  color: #d9e5e2;
+  color: #374151;
   font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -355,15 +358,15 @@ h2 {
   top: 16px;
   right: 16px;
   padding: 7px 12px;
-  border: 1px solid #65736f;
-  color: #d9e5e2;
+  border: 1px solid var(--line);
+  color: #374151;
   background: transparent;
   font: inherit;
   cursor: pointer;
 }
 
 .citation-box button:hover {
-  border-color: #fff;
+  border-color: var(--accent);
 }
 
 footer {
@@ -371,8 +374,9 @@ footer {
   justify-content: space-between;
   gap: 30px;
   padding: 34px max(24px, calc((100vw - var(--max)) / 2));
-  color: #c7d3d0;
-  background: #092b27;
+  color: var(--muted);
+  background: var(--soft);
+  border-top: 1px solid var(--line);
   font-size: 12px;
 }
 
@@ -386,7 +390,7 @@ footer div {
 }
 
 footer a {
-  color: #fff;
+  color: var(--accent);
   font-weight: 700;
   text-decoration: none;
 }
@@ -482,4 +486,14 @@ footer a {
   footer {
     flex-direction: column;
   }
+}
+
+.button.primary:hover {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+}
+
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
 }
