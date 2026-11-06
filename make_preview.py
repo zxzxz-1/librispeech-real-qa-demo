@@ -14,8 +14,8 @@ import sys
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parent
-PAGE = ROOT / "index.html"
-OUT = ROOT / "preview.png"
+PAGE = ROOT / "demo" / "index.html"
+OUT = ROOT / "assets" / "preview.png"
 
 # Stop the clock just past the last emission of the first case, so the card shows
 # both streams fully populated, plus the timeline and output log.

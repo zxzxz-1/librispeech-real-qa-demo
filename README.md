@@ -1,15 +1,21 @@
-# LibriSpeech-Real-QA · Streaming Demo
+# LibriSpeech-Real-QA · Project Page
 
-An interactive demo of the streaming QA baseline for **LibriSpeech-Real-QA**, a
+The project page and interactive streaming demo for **LibriSpeech-Real-QA**, a
 benchmark for *streaming question answering* over continuous speech.
 
 A Qwen2.5-Omni-7B model, adapted with LoRA SFT, listens to a LibriSpeech utterance
 in **160 ms chunks** and makes one decision per chunk: stay silent, or emit the
 queried content the moment it becomes observable.
 
-▶ **Live demo:** https://zxzxz-1.github.io/librispeech-real-qa-demo/
+▶ **Project page:** https://zxzxz-1.github.io/librispeech-real-qa-demo/
 
-![preview](preview.png)
+▶ **Interactive demo:** https://zxzxz-1.github.io/librispeech-real-qa-demo/demo/
+
+- [Paper](https://arxiv.org/abs/2611.06496)
+- [Dataset](https://huggingface.co/datasets/light1726/librispeech-realtime-qa)
+- [Code](https://github.com/zxzxz-1/librispeech-real-qa-demo)
+
+![preview](assets/preview.png)
 
 ---
 
@@ -71,13 +77,16 @@ word's onset.
 
 | File | Purpose |
 |---|---|
-| `index.html` | the demo — fully self-contained (audio is base64-embedded), no external requests |
-| `build_streaming_demo.py` | regenerates `index.html` from inference logs |
+| `index.html` | the research project page |
+| `assets/style.css` | project page styles |
+| `assets/preview.png` | project page and README demo preview |
+| `demo/index.html` | the demo — fully self-contained (audio is base64-embedded), no external requests |
+| `build_streaming_demo.py` | regenerates `demo/index.html` from inference logs |
 | `align_words.py` | forced alignment of LibriSpeech transcripts with wav2vec2 |
 | `word_align.json` | word-level timings produced by `align_words.py` |
 | `test_demo.js` | headless functional test (DOM + Audio stubbed) |
 | `render_transcript.js` | prints both rendered streams to the console for inspection |
-| `make_preview.py` | regenerates `preview.png` with Playwright |
+| `make_preview.py` | regenerates `assets/preview.png` with Playwright |
 
 ## Running the test
 
@@ -90,14 +99,13 @@ throughout playback, that the output stream has exactly one token per chunk with
 emissions only at the chunks the model fired on, that the output stays dominated by
 `<silence>`, and that reset clears all state.
 
-It looks for `streaming_160ms_demo.html` first and falls back to `index.html`, or
-honours `DEMO_HTML=<file>`, so the same test runs in the development tree and here.
+It uses `demo/index.html` by default and honours `DEMO_HTML=<file>`.
 
 ## Rebuilding
 
 `build_streaming_demo.py` and `align_words.py` read inference logs and audio from a
 local LibriSpeech checkout, so they need those paths — see the constants at the top of
-each file. `index.html` is committed, so the demo itself needs no rebuild to be viewed.
+each file. `demo/index.html` is committed, so the demo itself needs no rebuild to be viewed.
 
 ## Attribution
 

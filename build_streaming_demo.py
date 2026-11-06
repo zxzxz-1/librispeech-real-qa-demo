@@ -31,7 +31,7 @@ OUT_ROOT = Path(
 RUN = "phase5_joint_posneg080_chunk016_v2"
 EVAL = OUT_ROOT / RUN / "eval_test_clean"
 METRICS = EVAL / "stream_s2t_metrics_ms"
-DEST = Path(__file__).resolve().parent / "streaming_160ms_demo.html"
+DEST = Path(__file__).resolve().parent / "demo" / "index.html"
 
 CHUNK_SEC = 0.16
 BITRATE = "48k"
@@ -259,6 +259,7 @@ def main() -> None:
         assert rev[-1] <= c["duration"] + 1e-9, (c["id"], rev[-1], c["duration"])
 
     html = TEMPLATE.replace("__DATA__", json.dumps(cases, ensure_ascii=False))
+    DEST.parent.mkdir(parents=True, exist_ok=True)
     DEST.write_text(html, encoding="utf-8")
     print(f"\nWrote {DEST}  ({DEST.stat().st_size/1e6:.2f} MB)")
 

@@ -5,9 +5,9 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-// The build is published as index.html but kept as streaming_160ms_demo.html in
-// the development tree; accept either so this test runs in both.
-const PAGE = [process.env.DEMO_HTML, 'streaming_160ms_demo.html', 'index.html']
+// The project page lives at the repository root; the self-contained player is
+// published under demo/.
+const PAGE = [process.env.DEMO_HTML, 'demo/index.html', 'streaming_160ms_demo.html']
   .filter(Boolean)
   .map(f => path.join(__dirname, f))
   .find(f => fs.existsSync(f));
